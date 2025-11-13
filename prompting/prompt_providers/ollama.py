@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from typing import Optional, override, List
 
-from prompt.interface import LLMProvider, History, Message
+from prompt_providers.interface import LLMProvider, History, Message
 
 from ollama import chat, ChatResponse
 

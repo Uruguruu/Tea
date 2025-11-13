@@ -1,6 +1,6 @@
-from prompt.interface import Message
-from prompt.ollama import OllamaProvider
-from prompt.gemini_api import GeminiAPIProvider
+from prompt_providers.interface import Message
+from prompt_providers.ollama import OllamaProvider
+from prompt_providers.gemini_api import GeminiAPIProvider
 
 
 def main():
