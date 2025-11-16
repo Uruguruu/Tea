@@ -1,7 +1,7 @@
 import glob
 import json
 import os
-from typing import Any, Optional, cast
+from typing import Any
 
 
 def get_questions() -> list[str]:
@@ -63,48 +63,24 @@ def get_possible_numbers(question: dict[str, Any]) -> dict[str, int]:
     return lengths
 
 
-def get_question_combination(question: dict[str, Any], combination: dict[str, int]) -> list[str]:
+def get_question_combination(question: dict[str, Any], combination: dict[str, int]) -> dict[str, Any]:
     """
     Extracts and assembles the instruction set for a question based on a
     combination mapping.
-
-    The function retrieves optional system‑level instructions and the main
-    prompt from *question*, then resolves each entry defined in *combination*
-    by selecting the appropriate element from the corresponding list in the
-    *question*'s ``situation_or_context`` mapping.  If a ``Frame`` element is
-    present in the ``imaginary_self`` list, its ``instructions`` value is used
-    as a template for other instructions; otherwise the raw instruction string
-    is appended.  Errors while locating an element are reported with ``print``
-    and the resulting entry is left empty.
-
-    :param question: dict[str, Any]
-        Dictionary that may contain:
-
-        * ``system_instructions`` – a list of strings with system‑level
-          instructions,
-        * ``prompt`` – the primary prompt string,
-        * ``situation_or_context`` – a mapping where each key maps to a list of
-          dictionaries, each dictionary containing at least ``name`` and
-          ``instructions`` entries.
-    :param combination: dict[str, int]
-        Mapping from a context key to a 1‑based index indicating which element
-        from the corresponding list should be used.
-
-
-    :rtype: list[str]
-        Ordered list consisting of the system instructions, the prompt, and
-        the resolved instructions for each key in *combination*.
-
-    :raises: None
-    All lookup errors are caught internally and reported via ``print``.
     """
-    system_instructions = question.get("system_instructions", [])
+    system_instructions = question.get("system_instructions", "")
     prompt = question.get("prompt", "")
-    response_options = question.get("response_options", [])
+    response_options = question.get("response_options", "")
     situation_or_context_obj: dict[str, list[dict[str, str]]] = question.get("situation_or_context", {})
-    result = [system_instructions, prompt, *get_situation_or_context(situation_or_context_obj, combination),
-              response_options]
-    return result
+    
+    context = get_situation_or_context(situation_or_context_obj, combination)
+    
+    return {
+        "system_instructions": system_instructions,
+        "prompt": prompt,
+        "context": context,
+        "response_options": response_options
+    }
 
 
 def _get_instruction(target_object: dict[str, str]) -> str:
@@ -143,59 +119,21 @@ list[str]:
     return result
 
 
-def get_frameworks(question: dict[str, Any]) -> list[str]:
+def get_evaluation_questions(question: dict[str, Any]) -> list[dict[str, Any]]:
     """
-    Extract the names of frameworks from a configuration dictionary.
+    Retrieves the evaluation frameworks and their questions from the question data.
 
-    The function looks for a ``frameworks_to_decide_on`` entry inside the
-    provided *question* mapping.  If the entry is missing or empty,
-    a :class:`ValueError` is raised.  For each framework dictionary found,
-    its ``name`` field is collected.  An empty name triggers a warning
-    printed to standard output, but the empty string is still added to
-    the result list.
-
-    :param question: Configuration mapping that should contain a
-        ``frameworks_to_decide_on`` key.
-    :type question: dict[str, Any]
-
-    :return: List of framework names extracted from the configuration.
-    :rtype: list[str]
-
-    :raises ValueError: If ``frameworks_to_decide_on`` is missing or empty.
+    :param question: The question data.
+    :return: A list of dictionaries, where each dictionary represents a framework
+             and contains the framework's name and a list of questions.
     """
-    frameworks = question.get("frameworks_to_decide_on", {})
-    if not frameworks:
-        raise ValueError("No Framework for evaluation available in config. Please adjust the config!")
-
-    result = []
-    for framework in frameworks:
-        framework_name = framework.get("name", "")
-        result.append(framework_name)
-
-        if not framework_name:
-            print("Warning: Framework doesn't have a name.")
-
-    return result
-
-
-def get_evaluation(question: dict[str, Any]) -> list[dict[str, str]]:
-    """
-    Detailed summary:
-    Evaluate the supplied configuration dictionary and retrieve the framework
-    selection information.
-
-    :param question: Mapping expected to contain a ``frameworks_to_decide_on`` key
-        whose value holds the frameworks to be evaluated.
-    :returns: The ``frameworks_to_decide_on`` sub‑dictionary extracted from the
-        provided ``question`` argument.
-    :raises ValueError: If the ``frameworks_to_decide_on`` entry is missing or
-        evaluates to a falsy value.
-    """
-    frameworks = cast(list[dict[str, str]], question.get("frameworks_to_decide_on"))
+    frameworks = question.get("frameworks_to_decide_on")
 
     if not frameworks:
-        raise ValueError("No or faulty Framework in config. Please adjust the config!")
+        raise ValueError(
+            "No or faulty Framework in config. Please adjust the config!")
     if not isinstance(frameworks, list):
-        raise TypeError("Configuration error: 'frameworks_to_decide_on' must be a list.")
+        raise TypeError(
+            "Configuration error: 'frameworks_to_decide_on' must be a list.")
 
     return frameworks
