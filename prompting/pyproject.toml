@@ -8,4 +8,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "google-genai>=1.49.0",
     "ollama>=0.6.0",
+    "tqdm",
+    "httpx",
+    "pandas",
 ]

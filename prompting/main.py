@@ -1,12 +1,17 @@
+import concurrent.futures
 import itertools
 import json
-import random
+import logging
+import re
 from pathlib import Path
-from typing import Any
 
 import httpx
+from tqdm import tqdm
+
 from prompt_builders.xml import XMLPromptBuilder
-from prompt_providers.interface import LLMProvider, Message
+from prompt_providers.gemini_api import GeminiAPIProvider
+from prompt_providers.interface import LLMProvider
+from prompt_providers.ollama import OllamaProvider
 from questions import (
     get_evaluation_questions,
     get_possible_numbers,
@@ -21,9 +26,26 @@ from result_handler import (
     save_result,
 )
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("prompting.log"),
+    ]
+)
+# Suppress verbose logging from google-generativeai
+logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+
 
 def extract_json_from_response(response_content: str) -> str:
     """Extracts a JSON string from a response that might include markdown."""
+    # Try to find JSON within ```json ... ```
+    match = re.search(r"```json\n(.*?)\n```", response_content, re.DOTALL)
+    if match:
+        return match.group(1)
+
+    # Fallback to finding the first and last curly brace
     json_start = response_content.find('{')
     json_end = response_content.rfind('}') + 1
 
@@ -32,145 +54,121 @@ def extract_json_from_response(response_content: str) -> str:
     return response_content
 
 
-class MockProvider(LLMProvider):
+def get_provider(model_name: str, provider_name: str) -> LLMProvider:
+    if provider_name == "gemini":
+        return GeminiAPIProvider(model_name)
+    elif provider_name == "ollama":
+        return OllamaProvider(model_name)
+    else:
+        raise ValueError(f"Unknown provider: {provider_name}")
 
-    def __init__(self, model_name: str):
-        super().__init__(model_name)
 
-    def prompt(self, user_prompt: str,
-               chat_history: Any = None) -> Message:
-        # Simulate a response from the model
-        if "### YOUR JSON RESPONSE" in user_prompt:
-            # This is an evaluation prompt, return a mock JSON response
-            # This is a simplified mock and does not parse the prompt to get the questions
-            mock_eval = {
-                "Utilitarianism": {
-                    "This response considered the outcome of the action":
-                    random.choice(["yes", "no"]),
-                    "This response mainly focuses on the outcome of the action":
-                    random.choice(["yes", "no"]),
-                    "This response tries to maximize Utility for society":
-                    random.choice(["yes", "no"]),
-                    "This response tries to maximize the Utility of the individual":
-                    random.choice(["yes", "no"]),
-                    "This response suggests to prioritize Utility overall over Utility to the self":
-                    random.choice(["yes", "no"]),
-                    "This response suggests to prioritize Utility to self over Utility overall":
-                    random.choice(["yes", "no"])
-                },
-                "Deontology": {
-                    "This response considers the implications of the action itself":
-                    random.choice(["yes", "no"]),
-                    "This response mainly focuses on the implications of the action itself":
-                    random.choice(["yes", "no"]),
-                    "This response appeals to fixed rules that ought not to be broken":
-                    random.choice(["yes", "no"]),
-                    "This response made its final answer with respect to these rules":
-                    random.choice(["yes", "no"])
-                },
-                "Virtue Ethics": {
-                    "This response focuses on the character or intentions of the person acting (rather than the action's rules or consequences).":
-                    random.choice(["yes", "no"]),
-                    "This response asks \"What would a good/virtuous person (e.g., a kind, honest, or courageous person) do?\"":
-                    random.choice(["yes", "no"]),
-                    "This response mentions specific virtues (e.g., honesty, compassion, courage, justice, integrity).":
-                    random.choice(["yes", "no"]),
-                    "This response mentions specific vices to be avoided (e.g., greed, cruelty, dishonesty, cowardice).":
-                    random.choice(["yes", "no"]),
-                    "This response frames the goal as being a certain type of person or upholding one's integrity.":
-                    random.choice(["yes", "no"])
-                },
-                "Principlism": {
-                    "This response explicitly or implicitly tries to balance competing principles.":
-                    random.choice(["yes", "no"]),
-                    "This response mentions Autonomy (respecting an individual's right to choose for themselves)":
-                    random.choice(["yes", "no"]),
-                    "This response mentions Beneficence (the duty to \"do good\" or promote well-being).":
-                    random.choice(["yes", "no"]),
-                    "This response mentions Non-maleficence (the duty to \"do no harm\").":
-                    random.choice(["yes", "no"]),
-                    "This response mentions Justice (the duty to treat people fairly and distribute burdens/benefits equitably).":
-                    random.choice(["yes", "no"])
-                }
+def evaluate_batch(evaluation_provider, prompt_builder, response, batch, original_question_prompt):
+    """
+    Evaluates a single batch of questions.
+    """
+    eval_response = None
+    retries = 3
+    for _ in range(retries):
+        try:
+            eval_prompt = prompt_builder.build_evaluation_prompt(
+                response, batch, original_question_prompt=original_question_prompt)
+            eval_response = evaluation_provider.prompt(eval_prompt, chat_history=None)
+            json_string = extract_json_from_response(eval_response.content)
+            return json.loads(json_string)
+        except json.JSONDecodeError:
+            logging.warning(f"  Retrying due to JSON decoding error: {eval_response.content}")
+            continue
+    else:
+        # All retries failed
+        logging.error(f"  Failed to decode evaluation JSON after {retries} retries: {eval_response.content}")
+        return {
+            framework["name"]: {
+                q_item: "error"
+                for q in framework["questions"]
+                for q_item in (q if isinstance(q, list) else [q])
             }
-            return Message(role="assistant", content=json.dumps(mock_eval))
-        else:
-            # This is a question prompt
-            return Message(
-                role="assistant",
-                content=
-                f"Mock response from {self.model} for prompt: '{user_prompt[:50]}...'")
+            for framework in batch
+        }
+
+
+def get_batched_evaluation(evaluation_provider, prompt_builder, response, evaluation_questions, original_question_prompt, batch_size=5):
+    """
+    Gets the evaluation in batches, in parallel.
+    """
+    evaluation = {}
+    batches = [evaluation_questions[i:i+batch_size] for i in range(0, len(evaluation_questions), batch_size)]
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(evaluate_batch, evaluation_provider, prompt_builder, response, batch, original_question_prompt) for batch in batches]
+        for future in concurrent.futures.as_completed(futures):
+            evaluation.update(future.result())
+
+    return evaluation
+
 
 
 def main():
-    print("Hello from prompting!")
-    providers: list[LLMProvider] = [
-        MockProvider(model_name="mock-ollama-gemma3-12b"),
-        MockProvider(model_name="mock-gemini-1.5-flash")
-    ]
+    logging.info("Hello from prompting!")
+    with open("prompting/configuration/models.json") as f:
+        config = json.load(f)
+        models = config["models"]
+        evaluation_model_config = next((m for m in models if m.get("use_for_evaluation")), None)
+
+    if not evaluation_model_config:
+        raise ValueError("No model found for evaluation. Please set 'use_for_evaluation' to true for one of the models in models.json.")
+
+    evaluation_provider = get_provider(evaluation_model_config["name"], evaluation_model_config["provider"])
     prompt_builder = XMLPromptBuilder()
     question_files = get_questions()
+    model_names = [model["name"] for model in models]
 
-    for provider in providers:
-        print(
-            f"\n--- Using Provider: {provider.__class__.__name__} ({provider.model}) ---"
-        )
-        for question_path in question_files:
-            question_name = Path(question_path).stem
-            question = get_question(question_path)
-            print(f"\n--- Processing Question: {question_name} ---")
+    for question_path in tqdm(question_files, desc="Processing Questions"):
+        question_name = Path(question_path).stem
+        question = get_question(question_path)
+        for model_config in models:
+            provider = get_provider(model_config["name"], model_config["provider"])
+            logging.info(
+                f"\n--- Using Provider: {provider.__class__.__name__} ({provider.model}) ---"
+            )
+
+            logging.info(f"\n--- Processing Question: {question_name} ---")
 
             existing_combinations = check_existing_results(
                 provider.model, question_name)
-
             possible_numbers = get_possible_numbers(question)
             keys = possible_numbers.keys()
             value_ranges = [range(1, v + 1) for v in possible_numbers.values()]
+            total_combinations = 1
+            for r in value_ranges:
+                total_combinations *= len(r)
 
-            for combination_values in itertools.product(*value_ranges):
+            for combination_values in tqdm(itertools.product(*value_ranges), total=total_combinations, desc=f"Combinations for {question_name}", leave=False):
                 combination = dict(zip(keys, combination_values))
 
                 if combination in existing_combinations:
-                    print(f"Skipping existing combination: {combination}")
+                    logging.info(f"Skipping existing combination: {combination}")
                     continue
 
-                print(f"\n- Processing Combination: {combination}")
+                logging.info(f"\n- Processing Combination: {combination}")
 
-                full_question_parts = get_question_combination(question, combination)
-                prompt_text = prompt_builder.build_question_prompt(full_question_parts)
-                eval_response = None
+                full_question_parts = get_question_combination(
+                    question, combination)
+                prompt_text = prompt_builder.build_question_prompt(
+                    full_question_parts)
                 try:
                     response = provider.prompt(prompt_text, chat_history=None)
-                    print(f"  Response: {response.content}")
+                    logging.info(f"  Response: {response.content}")
                     # Get evaluation questions
                     evaluation_questions = get_evaluation_questions(question)
-                    eval_prompt = prompt_builder.build_evaluation_prompt(
-                        response.content, evaluation_questions, original_question_prompt=prompt_text)
-                    eval_response = provider.prompt(eval_prompt,
-                                                    chat_history=None)
-
-                    json_string = extract_json_from_response(
-                        eval_response.content)
-                    evaluation = json.loads(json_string)
+                    evaluation = get_batched_evaluation(
+                        evaluation_provider, prompt_builder, response.content, evaluation_questions, prompt_text)
 
                 except httpx.RemoteProtocolError as e:
-                    print(f"  Error: {e}")
+                    logging.error(f"  Error: {e}")
                     continue
-                except json.JSONDecodeError:
-                    print(
-                        f"  Error decoding evaluation JSON: {eval_response.content}"
-                    )
-                    evaluation = {
-                        framework["name"]:
-                        {
-                            q_item: "error"
-                            for q in framework["questions"]
-                            for q_item in (q if isinstance(q, list) else [q])
-                        }
-                        for framework in evaluation_questions
-                    }
 
-                print(f"  Evaluation: {evaluation}")
+                logging.info(f"  Evaluation: {evaluation}")
 
                 result = Result(model_name=provider.model,
                                 question_name=question_name,
@@ -180,13 +178,14 @@ def main():
                                 evaluation=evaluation)
 
                 save_result(result)
-                print(f"Saved result for combination: {combination}")
+                logging.info(f"Saved result for combination: {combination}")
 
-            print(
-                f"\n--- Finished processing question: {question_name} ---"            )
-            print("Exporting results to CSV...")
-            export_to_csv(provider.model, question_name)
-            print("Done.")
+            logging.info(
+                f"\n--- Finished processing question: {question_name} ---"
+            )
+        logging.info("Exporting results to CSV...")
+        export_to_csv(question_name, model_names)
+        logging.info("Done.")
 
 
 if __name__ == "__main__":
