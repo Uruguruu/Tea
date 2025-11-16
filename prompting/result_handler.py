@@ -16,23 +16,26 @@ class Result:
     evaluation: Dict[str, Dict[str, str]]
 
 
-def get_results_dir(model_name: str, question_name: str) -> Path:
+def get_results_dir(question_name: str, model_name: str = None) -> Path:
     """
     Retrieve (or create) the directory where results for a specific model and
-    question are stored.
+    question are stored. If model_name is None, it returns the directory for the question.
 
     :param model_name: Name of the model whose results are being saved.
     :param question_name: Identifier for the specific question or task.
     :return: Path object pointing to the created or existing results directory.
     """
-    results_dir = Path("results") / model_name / question_name
+    if model_name:
+        results_dir = Path("results") / model_name / question_name
+    else:
+        results_dir = Path("results") / question_name
     results_dir.mkdir(parents=True, exist_ok=True)
     return results_dir
 
 
 def save_result(result: Result):
     """Saves a single result to a JSON file."""
-    results_dir = get_results_dir(result.model_name, result.question_name)
+    results_dir = get_results_dir(result.question_name, result.model_name)
 
     # Find the next available file number
     i = 0
@@ -46,36 +49,46 @@ def save_result(result: Result):
         json.dump(asdict(result), f, indent=4)
 
 
-def load_all_results(model_name: str, question_name: str) -> List[Result]:
+def load_all_results(question_name: str, model_name: str = None) -> List[Result]:
     """Loads all results for a given model and question."""
-    results_dir = get_results_dir(model_name, question_name)
-    results = []
-    for result_file in results_dir.glob("result_*.json"):
-        with open(result_file, "r") as f:
-            data = json.load(f)
-            results.append(Result(**data))
-    return results
+    if model_name:
+        results_dir = get_results_dir(question_name, model_name)
+        results = []
+        for result_file in results_dir.glob("result_*.json"):
+            with open(result_file, "r") as f:
+                data = json.load(f)
+                results.append(Result(**data))
+        return results
+    else:
+        results = []
+        for model_dir in Path("results").iterdir():
+            if model_dir.is_dir():
+                results.extend(load_all_results(question_name, model_dir.name))
+        return results
 
 
 def check_existing_results(model_name: str,
                            question_name: str) -> List[Dict[str, int]]:
     """Checks for existing results and returns a list of completed combinations."""
-    results = load_all_results(model_name, question_name)
+    results = load_all_results(question_name, model_name)
     return [result.combination for result in results]
 
 
-def export_to_csv(model_name: str, question_name: str):
-    """Exports all results for a given model and question to a CSV file."""
-    results = load_all_results(model_name, question_name)
-    if not results:
+def export_to_csv(question_name: str, model_names: List[str]):
+    """Exports all results for a given question and list of models to a CSV file."""
+    all_results = []
+    for model_name in model_names:
+        all_results.extend(load_all_results(question_name, model_name))
+
+    if not all_results:
         return
 
-    results_dir = get_results_dir(model_name, question_name)
+    results_dir = get_results_dir(question_name)
     csv_file = results_dir / "results.csv"
 
     # Flatten the data for CSV export
     flattened_data = []
-    for result in results:
+    for result in all_results:
         flat_result = {
             "model_name": result.model_name,
             "question_name": result.question_name,

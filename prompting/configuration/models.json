@@ -1,0 +1,49 @@
+{
+  "models": [
+    {
+      "name": "gemini-2.5-flash-lite",
+      "provider": "gemini",
+      "use_for_evaluation": true
+    },
+    {
+      "name": "gpt-oss:20b",
+      "provider": "ollama"
+    },
+    {
+      "name": "qwen2.5-coder:1.5b",
+      "provider": "ollama"
+    },
+    {
+      "name": "mistral",
+      "provider": "ollama"
+    },
+    {
+      "name": "gemma3:12b",
+      "provider": "ollama"
+    },
+    {
+      "name": "llama3.1:latest",
+      "provider": "ollama"
+    },
+    {
+      "name": "phi4:latest",
+      "provider": "ollama"
+    },
+    {
+      "name": "command-r7b:latest",
+      "provider": "ollama"
+    },
+    {
+      "name": "stablelm2:12b",
+      "provider": "ollama"
+    },
+    {
+      "name": "deepseek-v2:16b",
+      "provider": "ollama"
+    },
+    {
+      "name": "qwen3:8b",
+      "provider": "ollama"
+    }
+  ]
+}
