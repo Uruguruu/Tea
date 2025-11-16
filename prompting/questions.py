@@ -14,7 +14,7 @@ def get_questions() -> list[str]:
         path, which may be absolute or relative to the project root.
     :rtype: list[str]
     """
-    prompt_files_dir = "configuration/questions"
+    prompt_files_dir = "prompting/configuration/questions"
     json_files = glob.glob(os.path.join(prompt_files_dir, "*.json"))
     return json_files
 
