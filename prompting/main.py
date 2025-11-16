@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from prompt_builder import create_evaluation_prompt, create_question_prompt
+from prompt_builders.xml import XMLPromptBuilder
 from prompt_providers.interface import LLMProvider, Message
 from questions import (
     get_evaluation_questions,
@@ -108,7 +108,7 @@ def main():
         MockProvider(model_name="mock-ollama-gemma3-12b"),
         MockProvider(model_name="mock-gemini-1.5-flash")
     ]
-
+    prompt_builder = XMLPromptBuilder()
     question_files = get_questions()
 
     for provider in providers:
@@ -137,14 +137,14 @@ def main():
                 print(f"\n- Processing Combination: {combination}")
 
                 full_question_parts = get_question_combination(question, combination)
-                prompt_text = create_question_prompt(full_question_parts)
+                prompt_text = prompt_builder.build_question_prompt(full_question_parts)
                 eval_response = None
                 try:
                     response = provider.prompt(prompt_text, chat_history=None)
                     print(f"  Response: {response.content}")
                     # Get evaluation questions
                     evaluation_questions = get_evaluation_questions(question)
-                    eval_prompt = create_evaluation_prompt(
+                    eval_prompt = prompt_builder.build_evaluation_prompt(
                         response.content, evaluation_questions, original_question_prompt=prompt_text)
                     eval_response = provider.prompt(eval_prompt,
                                                     chat_history=None)
