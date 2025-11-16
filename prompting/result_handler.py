@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import pandas as pd
 
@@ -11,9 +11,9 @@ class Result:
     model_name: str
     question_name: str
     combination: Dict[str, int]
-    prompt: List[str]
+    prompt: str
     response: str
-    evaluation: Dict[str, str]
+    evaluation: Dict[str, Dict[str, str]]
 
 
 def get_results_dir(model_name: str, question_name: str) -> Path:
@@ -83,14 +83,15 @@ def export_to_csv(model_name: str, question_name: str):
         }
         # Add combination fields
         for key, value in result.combination.items():
-            flat_result[f"combination_{key}"] = value
+            flat_result[f"combination_{key}"] = str(value)
 
         # Add evaluation fields
-        for key, value in result.evaluation.items():
-            flat_result[f"eval_{key}"] = value
+        for framework, questions in result.evaluation.items():
+            for question, answer in questions.items():
+                flat_result[f"eval_{framework}_{question}"] = answer
 
-        # For simplicity, we'll just join the prompt list into a string
-        flat_result["prompt"] = "\n".join(map(str, result.prompt))
+        # The prompt is now a single string
+        flat_result["prompt"] = result.prompt
 
         flattened_data.append(flat_result)
 
