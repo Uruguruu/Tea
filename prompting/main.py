@@ -3,12 +3,13 @@ import itertools
 from prompt_providers.interface import Message
 from prompt_providers.ollama import OllamaProvider
 from prompt_providers.gemini_api import GeminiAPIProvider
-from questions import get_questions, get_question, get_possible_numbers, get_question_combination
+from questions import get_questions, get_question, get_possible_numbers, get_question_combination, get_evaluation, \
+    get_frameworks
 from pathlib import Path
 
 
 def main():
-    """print("Hello from prompting!")
+    print("Hello from prompting!")
     test_history = [
         Message(role="user", content="Hello from the user!"),
         Message(role="assistant", content="Hello from the assistant!")
@@ -28,7 +29,7 @@ def main():
     print("\n------ Gemini ------\n")
     print(response1.content)
     print("\n---- Gemini with History ---\n")
-    print(response2.content)"""
+    print(response2.content)
 
     print("Hello from questions")
     question_files = get_questions()
@@ -52,6 +53,8 @@ def main():
                 print(f"  Context {i+1}:", context)
             print("  Response Options:", full_question[-1])
 
+        print("\nEvaluation Example\n", get_evaluation(question))
+        print("\n", get_frameworks(question))
 
 if __name__ == "__main__":
     main()
