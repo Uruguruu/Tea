@@ -1,10 +1,14 @@
+import itertools
+
 from prompt_providers.interface import Message
 from prompt_providers.ollama import OllamaProvider
 from prompt_providers.gemini_api import GeminiAPIProvider
+from questions import get_questions, get_question, get_possible_numbers, get_question_combination
+from pathlib import Path
 
 
 def main():
-    print("Hello from prompting!")
+    """print("Hello from prompting!")
     test_history = [
         Message(role="user", content="Hello from the user!"),
         Message(role="assistant", content="Hello from the assistant!")
@@ -24,7 +28,29 @@ def main():
     print("\n------ Gemini ------\n")
     print(response1.content)
     print("\n---- Gemini with History ---\n")
-    print(response2.content)
+    print(response2.content)"""
+
+    print("Hello from questions")
+    question_files = get_questions()
+
+    for question_path in question_files:
+        question = get_question(question_path)
+        possible_numbers = get_possible_numbers(question)
+        print(f"\n--- Question: {Path(question_path).stem} ---")
+        print("Possible numbers:", possible_numbers)
+
+        keys = possible_numbers.keys()
+        value_ranges = [range(1, v + 1) for v in possible_numbers.values()]
+
+        for combination_values in itertools.product(*value_ranges):
+            combination = dict(zip(keys, combination_values))
+            print("\n- Combination:", combination)
+            full_question = get_question_combination(question, combination)
+            print("  System Instructions:", full_question[0])
+            print("  Prompt:", full_question[1])
+            for i, context in enumerate(full_question[2:-1]):
+                print(f"  Context {i+1}:", context)
+            print("  Response Options:", full_question[-1])
 
 
 if __name__ == "__main__":
