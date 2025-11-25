@@ -8,8 +8,13 @@ The Technical Ethics Analyzer is a software solution developed to assess the eth
 Teas primary purpose is to prompt at scale, which is provided as a python app in the prompting folder.
 
 You can run it via:
+You can run it via:
 ```bash
-uv run prompting/main.py
+make prompting
+```
+Or manually:
+```bash
+uv run --directory prompting main.py
 ```
 
 ### Analysing
@@ -17,7 +22,11 @@ As we are analysing with a specific prompt template Tea also provides some basic
 
 You can run it via:
 ```bash
-uv run analysing/main.py
+make analysing
+```
+Or manually:
+```bash
+uv run --directory analysing main.py
 ```
 
 ## Utility
