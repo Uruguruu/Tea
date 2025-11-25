@@ -1,0 +1,7 @@
+[evaluation]
+retries = 3
+batch_size = 5
+
+[logging]
+format = "%(asctime)s - %(levelname)s - %(message)s"
+google_genai_level = "WARNING"

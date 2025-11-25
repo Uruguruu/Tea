@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import httpx
+import tomllib
 from tqdm import tqdm
 
 from prompt_builders.xml import XMLPromptBuilder
@@ -26,16 +27,7 @@ from result_handler import (
     save_result,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("prompting.log"),
-    ]
-)
-# Suppress verbose logging from google-generativeai
-logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+
 
 
 def extract_json_from_response(response_content: str) -> str:
@@ -63,12 +55,11 @@ def get_provider(model_name: str, provider_name: str) -> LLMProvider:
         raise ValueError(f"Unknown provider: {provider_name}")
 
 
-def evaluate_batch(evaluation_provider, prompt_builder, response, batch, original_question_prompt):
+def evaluate_batch(evaluation_provider, prompt_builder, response, batch, original_question_prompt, retries=3):
     """
     Evaluates a single batch of questions.
     """
     eval_response = None
-    retries = 3
     for _ in range(retries):
         try:
             eval_prompt = prompt_builder.build_evaluation_prompt(
@@ -92,7 +83,7 @@ def evaluate_batch(evaluation_provider, prompt_builder, response, batch, origina
         }
 
 
-def get_batched_evaluation(evaluation_provider, prompt_builder, response, evaluation_questions, original_question_prompt, batch_size=5):
+def get_batched_evaluation(evaluation_provider, prompt_builder, response, evaluation_questions, original_question_prompt, batch_size=5, retries=3):
     """
     Gets the evaluation in batches, in parallel.
     """
@@ -100,7 +91,7 @@ def get_batched_evaluation(evaluation_provider, prompt_builder, response, evalua
     batches = [evaluation_questions[i:i+batch_size] for i in range(0, len(evaluation_questions), batch_size)]
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(evaluate_batch, evaluation_provider, prompt_builder, response, batch, original_question_prompt) for batch in batches]
+        futures = [executor.submit(evaluate_batch, evaluation_provider, prompt_builder, response, batch, original_question_prompt, retries) for batch in batches]
         for future in concurrent.futures.as_completed(futures):
             evaluation.update(future.result())
 
@@ -110,17 +101,39 @@ def get_batched_evaluation(evaluation_provider, prompt_builder, response, evalua
 
 def main():
     logging.info("Hello from prompting!")
-    with open("prompting/configuration/models.json") as f:
-        config = json.load(f)
+    logging.info("Hello from prompting!")
+    with open("prompting/configuration/models.toml", "rb") as f:
+        config = tomllib.load(f)
         models = config["models"]
+        paths = config.get("paths", {})
+        questions_dir = paths.get("questions_dir", "prompting/configuration/questions")
+        results_dir = Path(paths.get("results_dir", "results"))
+        log_file = paths.get("log_file", "prompting.log")
         evaluation_model_config = next((m for m in models if m.get("use_for_evaluation")), None)
+
+    with open("prompting/configuration/config.toml", "rb") as f:
+        app_config = tomllib.load(f)
+        eval_config = app_config.get("evaluation", {})
+        logging_config = app_config.get("logging", {})
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format=logging_config.get("format", '%(asctime)s - %(levelname)s - %(message)s'),
+        handlers=[
+            logging.FileHandler(log_file),
+        ],
+        force=True
+    )
+    # Suppress verbose logging from google-generativeai
+    logging.getLogger("google.generativeai").setLevel(logging_config.get("google_genai_level", "WARNING"))
 
     if not evaluation_model_config:
         raise ValueError("No model found for evaluation. Please set 'use_for_evaluation' to true for one of the models in models.json.")
 
     evaluation_provider = get_provider(evaluation_model_config["name"], evaluation_model_config["provider"])
     prompt_builder = XMLPromptBuilder()
-    question_files = get_questions()
+    question_files = get_questions(questions_dir)
     model_names = [model["name"] for model in models]
 
     for question_path in tqdm(question_files, desc="Processing Questions"):
@@ -135,7 +148,7 @@ def main():
             logging.info(f"\n--- Processing Question: {question_name} ---")
 
             existing_combinations = check_existing_results(
-                provider.model, question_name)
+                results_dir, provider.model, question_name)
             possible_numbers = get_possible_numbers(question)
             keys = possible_numbers.keys()
             value_ranges = [range(1, v + 1) for v in possible_numbers.values()]
@@ -162,7 +175,10 @@ def main():
                     # Get evaluation questions
                     evaluation_questions = get_evaluation_questions(question)
                     evaluation = get_batched_evaluation(
-                        evaluation_provider, prompt_builder, response.content, evaluation_questions, prompt_text)
+                        evaluation_provider, prompt_builder, response.content, evaluation_questions, prompt_text,
+                        batch_size=eval_config.get("batch_size", 5),
+                        retries=eval_config.get("retries", 3)
+                    )
 
                 except httpx.RemoteProtocolError as e:
                     logging.error(f"  Error: {e}")
@@ -177,14 +193,14 @@ def main():
                                 response=response.content,
                                 evaluation=evaluation)
 
-                save_result(result)
+                save_result(results_dir, result)
                 logging.info(f"Saved result for combination: {combination}")
 
             logging.info(
                 f"\n--- Finished processing question: {question_name} ---"
             )
         logging.info("Exporting results to CSV...")
-        export_to_csv(question_name, model_names)
+        export_to_csv(results_dir, question_name, model_names)
         logging.info("Done.")
 
 
