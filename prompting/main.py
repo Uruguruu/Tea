@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import httpx
+import tomllib
 from tqdm import tqdm
 
 from prompt_builders.xml import XMLPromptBuilder
@@ -110,8 +111,9 @@ def get_batched_evaluation(evaluation_provider, prompt_builder, response, evalua
 
 def main():
     logging.info("Hello from prompting!")
-    with open("prompting/configuration/models.json") as f:
-        config = json.load(f)
+    logging.info("Hello from prompting!")
+    with open("prompting/configuration/models.toml", "rb") as f:
+        config = tomllib.load(f)
         models = config["models"]
         evaluation_model_config = next((m for m in models if m.get("use_for_evaluation")), None)
 
