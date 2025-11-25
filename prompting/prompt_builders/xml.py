@@ -17,6 +17,14 @@ class XMLPromptBuilder(BasePromptBuilder):
 
         context_str = "\n".join(c for c in context if c)
 
+        response_options_block = ""
+        if response_option:
+            response_options_block = f"""
+        <response_options>
+        {response_option}
+        </response_options>
+        """
+
         prompt_template = """<system_instructions>
         {system_instructions}
         </system_instructions>
@@ -28,11 +36,7 @@ class XMLPromptBuilder(BasePromptBuilder):
         <context>
         {context}
         </context>
-
-        <response_options>
-        {response_option}
-        </response_options>
-        
+        {response_options_block}
 You should also provide a reason after you response with a dash.
 
         <formatting_instructions>
@@ -43,5 +47,5 @@ You should also provide a reason after you response with a dash.
             system_instructions=system_instructions,
             main_prompt_content=main_prompt_content,
             context=context_str,
-            response_option=response_option,
+            response_options_block=response_options_block,
         )
