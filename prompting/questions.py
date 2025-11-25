@@ -4,18 +4,18 @@ import os
 from typing import Any
 
 
-def get_questions() -> list[str]:
+def get_questions(questions_dir: str) -> list[str]:
     """
     Collects the file paths of all JSON prompt files located in the
-    `configuration/questions` directory.
+    specified directory.
 
+    :param questions_dir: Directory containing the question files.
     :returns: Paths of the JSON files found in the specified directory.  Each
         element in the returned list is a string representing the file
         path, which may be absolute or relative to the project root.
     :rtype: list[str]
     """
-    prompt_files_dir = "prompting/configuration/questions"
-    json_files = glob.glob(os.path.join(prompt_files_dir, "*.json"))
+    json_files = glob.glob(os.path.join(questions_dir, "*.json"))
     return json_files
 
 
