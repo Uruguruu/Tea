@@ -1,25 +1,21 @@
-import glob
-import json
-import os
+from pathlib import Path
 from typing import Any
+import json
 
 
-def get_questions(questions_dir: str) -> list[str]:
+def get_questions(questions_dir: Path) -> list[Path]:
     """
     Collects the file paths of all JSON prompt files located in the
     specified directory.
 
     :param questions_dir: Directory containing the question files.
-    :returns: Paths of the JSON files found in the specified directory.  Each
-        element in the returned list is a string representing the file
-        path, which may be absolute or relative to the project root.
-    :rtype: list[str]
+    :returns: Paths of the JSON files found in the specified directory.
+    :rtype: list[Path]
     """
-    json_files = glob.glob(os.path.join(questions_dir, "*.json"))
-    return json_files
+    return list(questions_dir.glob("*.json"))
 
 
-def get_question(filepath: str) -> dict[str, str]:
+def get_question(filepath: Path) -> dict[str, str]:
     """
     Function to load a question from a JSON file.
 
@@ -34,7 +30,7 @@ def get_question(filepath: str) -> dict[str, str]:
     :rtype: dict[str, str]
     """
     try:
-        with open(filepath, "r") as f:
+        with filepath.open("r") as f:
             question = json.load(f)
     except FileNotFoundError:
         print("Question not found")

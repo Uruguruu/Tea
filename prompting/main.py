@@ -106,9 +106,9 @@ def main():
         config = tomllib.load(f)
         models = config["models"]
         paths = config.get("paths", {})
-        questions_dir = paths.get("questions_dir", "prompting/configuration/questions")
+        questions_dir = Path(paths.get("questions_dir", "prompting/configuration/questions"))
         results_dir = Path(paths.get("results_dir", "results"))
-        log_file = paths.get("log_file", "prompting.log")
+        log_file = Path(paths.get("log_file", "prompting.log"))
         evaluation_model_config = next((m for m in models if m.get("use_for_evaluation")), None)
 
     with open("prompting/configuration/config.toml", "rb") as f:
@@ -137,7 +137,7 @@ def main():
     model_names = [model["name"] for model in models]
 
     for question_path in tqdm(question_files, desc="Processing Questions"):
-        question_name = Path(question_path).stem
+        question_name = question_path.stem
         question = get_question(question_path)
         for model_config in models:
             provider = get_provider(model_config["name"], model_config["provider"])
