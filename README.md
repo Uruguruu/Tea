@@ -8,7 +8,6 @@ The Technical Ethics Analyzer is a software solution developed to assess the eth
 Teas primary purpose is to prompt at scale, which is provided as a python app in the prompting folder.
 
 You can run it via:
-You can run it via:
 ```bash
 make prompting
 ```
